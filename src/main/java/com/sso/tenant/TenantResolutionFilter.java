@@ -27,9 +27,11 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
 
     private final OrganizationRepository orgRepo;
 
-    // These paths are NOT tenant-scoped — skip slug extraction
+    // These paths are NOT tenant-scoped — skip slug extraction.
+    // /login is here so bare /login (fallback redirect) doesn't extract "login" as a slug.
+    // /oauth2/ and /.well-known/ allow JWKS and metadata without a tenant prefix.
     private static final Set<String> NON_TENANT_PREFIXES = Set.of(
-            "/api/", "/error", "/actuator/"
+            "/api/", "/error", "/actuator/", "/oauth2/", "/.well-known/", "/login"
     );
 
     @Override

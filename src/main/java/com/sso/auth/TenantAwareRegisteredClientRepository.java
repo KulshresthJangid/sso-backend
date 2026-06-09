@@ -21,9 +21,18 @@ public class TenantAwareRegisteredClientRepository implements RegisteredClientRe
 
     @Override
     public void save(RegisteredClient registeredClient) {
-        // Used internally by Spring AS — not called by our code directly
-        throw new UnsupportedOperationException(
-                "Use ClientService to register clients; direct save not allowed.");
+        // Spring AS calls save() to upgrade BCrypt encoding strength on successful auth.
+        // Only allow updates to an existing client's secret — reject brand-new inserts.
+        clientRepo.findById(registeredClient.getId()).ifPresentOrElse(
+                entity -> {
+                    if (registeredClient.getClientSecret() != null) {
+                        entity.setClientSecret(registeredClient.getClientSecret());
+                        clientRepo.save(entity);
+                    }
+                },
+                () -> { throw new UnsupportedOperationException(
+                        "Use ClientService to register new clients."); }
+        );
     }
 
     @Override
