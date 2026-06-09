@@ -3,7 +3,8 @@
 # SSO Backend — Standalone Deployment Script
 #
 # Runs ON the server in the project directory. Builds the Spring Boot JAR
-# with Maven, installs/reloads the systemd service, and restarts it.
+# with Maven, then starts it as a background process via nohup.
+# No systemd — process is tracked via a PID file.
 #
 # Usage:
 #   ./deploy.sh                  — rolling update (pull → build → restart)
@@ -15,11 +16,8 @@
 #   • Git
 #   • .env file in this directory (copy from .env.example and fill in secrets)
 #
-# Nginx blocks needed in /etc/nginx/conf.d/services.conf:
-#   (see nginx_blocks.conf in this directory for the full snippet)
-#
-# Service managed:
-#   sso-backend  — Spring Authorization Server on port 9000
+# Logs:   /var/log/sso/sso-backend.log
+# PID:    /var/run/sso/sso-backend.pid
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -27,6 +25,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
 MODE="${1:-}"
 SERVICE_NAME="sso-backend"
+PID_DIR="/var/run/sso"
+LOG_DIR="/var/log/sso"
+PID_FILE="$PID_DIR/${SERVICE_NAME}.pid"
+LOG_FILE="$LOG_DIR/${SERVICE_NAME}.log"
 
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -39,6 +41,65 @@ log()  { echo -e "${CYAN}[$(date '+%H:%M:%S')]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
 die()  { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
+
+# ── Safe .env loader ──────────────────────────────────────────────────────────
+load_env() {
+  [ -f "$ENV_FILE" ] || die ".env not found. Copy .env.example → .env and fill in secrets."
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "${line// }" ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key// /}"
+    [[ -z "$key" ]] && continue
+    value="${value%\"}" ; value="${value#\"}"
+    export "$key=$value"
+  done < "$ENV_FILE"
+}
+
+# ── Process management ────────────────────────────────────────────────────────
+stop_service() {
+  if [ -f "$PID_FILE" ]; then
+    local PID
+    PID=$(cat "$PID_FILE" 2>/dev/null || true)
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+      log "Stopping $SERVICE_NAME (PID $PID)..."
+      kill "$PID" 2>/dev/null || true
+      local i=0
+      while kill -0 "$PID" 2>/dev/null && [ $i -lt 15 ]; do
+        sleep 1; i=$((i+1))
+      done
+      kill -9 "$PID" 2>/dev/null || true
+    fi
+    rm -f "$PID_FILE"
+  fi
+  pkill -f "sso-" 2>/dev/null || true
+  ok "$SERVICE_NAME stopped."
+}
+
+start_service() {
+  local JAR="$1"
+  mkdir -p "$PID_DIR" "$LOG_DIR"
+
+  # Rotate log when it exceeds 5 MB
+  if [ -f "$LOG_FILE" ] && [ "$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)" -gt 5242880 ]; then
+    mv "$LOG_FILE" "${LOG_FILE}.old"
+  fi
+
+  log "Starting $SERVICE_NAME..."
+  nohup java -jar "$JAR" >> "$LOG_FILE" 2>&1 &
+  local PID=$!
+  echo "$PID" > "$PID_FILE"
+
+  sleep 5
+  if ! kill -0 "$PID" 2>/dev/null; then
+    echo ""
+    echo -e "${RED}[ERROR]${NC} $SERVICE_NAME crashed on startup. Last 40 lines of log:"
+    tail -40 "$LOG_FILE" | sed 's/^/  /'
+    exit 1
+  fi
+  ok "$SERVICE_NAME is running (PID $PID). Log: $LOG_FILE"
+}
 
 # ── fresh-install: triple confirmation ───────────────────────────────────────
 if [[ "$MODE" == "fresh-install" ]]; then
@@ -65,18 +126,15 @@ if [[ "$MODE" == "fresh-install" ]]; then
     [[ "$ANSWER" == "yes" ]] || { echo "Aborted. Nothing changed."; exit 0; }
   done
 
-  [ -f "$ENV_FILE" ] || die ".env not found — cannot get DB credentials."
-  set -o allexport; source "$ENV_FILE"; set +o allexport
+  load_env
 
   log "Stopping $SERVICE_NAME..."
-  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+  stop_service
 
-  log "Dropping and recreating sso_db..."
-  DB_NAME="${DB_NAME:-sso_db}"
-  DB_USER="${DB_USER:-sso_user}"
-  sudo -u postgres psql -c "DROP DATABASE IF EXISTS ${DB_NAME};" \
+  log "Dropping and recreating ${DB_NAME:-sso_db}..."
+  sudo -u postgres psql -c "DROP DATABASE IF EXISTS ${DB_NAME:-sso_db};" \
     || die "Failed to drop DB. Is PostgreSQL running?"
-  sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" \
+  sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME:-sso_db} OWNER ${DB_USER:-sso_user};" \
     || die "Failed to recreate DB."
   ok "Database wiped and recreated."
 
@@ -88,8 +146,8 @@ fi
 
 # ── Pre-flight checks ─────────────────────────────────────────────────────────
 log "Checking prerequisites..."
-command -v java   >/dev/null || die "Java not installed. Install Java 21 JDK."
-command -v mvn    >/dev/null || die "Maven not installed. Run: apt install maven / yum install maven"
+command -v java >/dev/null || die "Java not installed. Install Java 21 JDK."
+command -v mvn  >/dev/null || die "Maven not installed. Run: yum install maven"
 [ -f "$ENV_FILE" ] || die ".env not found. Copy .env.example → .env and fill in secrets."
 
 JAVA_VER=$(java -version 2>&1 | head -1 | grep -oP '(?<=")\d+' | head -1)
@@ -99,52 +157,36 @@ ok "Prerequisites OK (Java $JAVA_VER)."
 # ── Pull latest code ──────────────────────────────────────────────────────────
 log "Pulling latest code..."
 cd "$SCRIPT_DIR"
-git pull origin main
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+git pull origin "$CURRENT_BRANCH"
+
+# Re-exec with the freshly pulled script so in-flight edits take effect.
+if [[ "${_SSO_PULLED:-0}" != "1" ]]; then
+  export _SSO_PULLED=1
+  exec "$0" "$@"
+fi
+
+# ── Load environment ──────────────────────────────────────────────────────────
+load_env
+ok "Environment loaded from .env."
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 log "Building JAR (skipping tests)..."
-mvn clean package -DskipTests -q 2>&1 | tail -5
+BUILD_LOG="$SCRIPT_DIR/build.log"
+if ! mvn clean package -DskipTests 2>&1 | tee "$BUILD_LOG" | grep -E '^\[ERROR\]|BUILD SUCCESS|BUILD FAILURE'; then
+  die "Maven build failed. Check $BUILD_LOG for details."
+fi
+grep -q "BUILD SUCCESS" "$BUILD_LOG" || die "Maven reported BUILD FAILURE. Check $BUILD_LOG."
+
 JAR=$(ls "$SCRIPT_DIR"/target/sso-*.jar 2>/dev/null | grep -v 'original' | head -1)
-[ -f "$JAR" ] || die "JAR not found after build. Check maven output."
+[ -f "$JAR" ] || die "JAR not found after build. Check $BUILD_LOG."
 ok "Built: $JAR"
 
-# ── Install / update systemd service ─────────────────────────────────────────
-log "Installing systemd service..."
+# ── Stop existing process ─────────────────────────────────────────────────────
+stop_service
 
-# Load env to get key store path
-set -o allexport; source "$ENV_FILE"; set +o allexport
-KEY_STORE_PATH="${KEY_STORE_PATH:-${HOME}/.vault-sso/signing}"
-mkdir -p "$(dirname "$KEY_STORE_PATH")"
-
-cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
-[Unit]
-Description=Vault SSO Authorization Server
-After=network.target postgresql.service
-Wants=postgresql.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=${SCRIPT_DIR}
-EnvironmentFile=${ENV_FILE}
-ExecStart=java -jar ${JAR}
-Restart=on-failure
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=${SERVICE_NAME}
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
-ok "systemd service installed."
-
-# ── Restart service ───────────────────────────────────────────────────────────
-log "Restarting $SERVICE_NAME..."
-systemctl restart "$SERVICE_NAME"
+# ── Start service ─────────────────────────────────────────────────────────────
+start_service "$JAR"
 
 # ── Health check ──────────────────────────────────────────────────────────────
 log "Waiting for SSO backend on port 9000 (up to 60s)..."
@@ -153,7 +195,11 @@ while true; do
   STATUS=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:9000/api/health 2>/dev/null \
     || curl -o /dev/null -s -w "%{http_code}" http://localhost:9000/api/orgs 2>/dev/null || true)
   [[ "$STATUS" =~ ^(200|401|403|404)$ ]] && break
-  [[ $SECONDS -ge $DEADLINE ]] && { warn "SSO backend did not respond in time. Check: journalctl -u sso-backend -n 50"; break; }
+  if [[ $SECONDS -ge $DEADLINE ]]; then
+    warn "SSO backend did not respond in time."
+    warn "  Check logs: tail -f $LOG_FILE"
+    break
+  fi
   echo "  waiting... (HTTP ${STATUS:----})"
   sleep 5
 done
@@ -172,5 +218,5 @@ echo -e "${GREEN}${BOLD}══════════════════�
 log "  SSO Backend  : http://localhost:9000"
 log "  Public path  : http://buildwithkulshresth.com/sso-server/"
 log "  OAuth2 flows : http://buildwithkulshresth.com/{tenant}/oauth2/authorize"
-log "  Logs         : journalctl -u sso-backend -f"
+log "  Logs         : tail -f $LOG_FILE"
 echo ""
