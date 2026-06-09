@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 import java.util.UUID;
@@ -54,6 +56,12 @@ public class UserService {
         User user = userRepo.findById(userId)
                 .filter(u -> u.getOrganization().getId().equals(org.getId()))
                 .orElseThrow(() -> SSOException.notFound("User not found"));
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && user.getEmail().equals(auth.getName())) {
+            throw SSOException.badRequest("You cannot deactivate your own account.");
+        }
+
         user.setActive(false);
         userRepo.save(user);
     }

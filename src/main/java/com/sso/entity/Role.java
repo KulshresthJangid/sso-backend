@@ -25,12 +25,14 @@ public class Role {
     @JoinColumn(name = "org_id", nullable = false)
     private Organization organization;
 
-    /**
-     * Nullable — null means this is an org-level role.
-     * Set means this role is specific to an app (registered client).
-     */
+    /** Nullable — null means org-level role; set means app-specific role */
     @Column(name = "client_id")
     private String clientId;
+
+    /** Nullable — null means org-level; set means scoped to a specific workspace */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workspace_id")
+    private Workspace workspace;
 
     @Column(nullable = false, length = 100)
     private String name;

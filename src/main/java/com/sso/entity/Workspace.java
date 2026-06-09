@@ -7,35 +7,31 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "organizations")
+@Table(name = "workspaces",
+       uniqueConstraints = @UniqueConstraint(columnNames = {"slug", "org_id"}))
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Organization {
+public class Workspace {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "org_id", nullable = false)
+    private Organization organization;
+
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, unique = true, length = 100)
+    @Column(nullable = false, length = 100)
     private String slug;
 
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private boolean active = true;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    @Builder.Default
-    private Plan plan = Plan.FREE;
-
-    @Column(name = "is_platform", nullable = false)
-    @Builder.Default
-    private boolean platform = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -43,9 +39,5 @@ public class Organization {
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
-    }
-
-    public enum Plan {
-        FREE, PRO, ENTERPRISE
     }
 }
