@@ -132,10 +132,10 @@ if [[ "$MODE" == "fresh-install" ]]; then
   stop_service
 
   log "Dropping and recreating ${DB_NAME:-sso_db}..."
-  docker exec session_logger_db psql -U postgres \
+  docker exec session_logger_db psql -U sessionuser \
     -c "DROP DATABASE IF EXISTS ${DB_NAME:-sso_db};" \
     || die "Failed to drop DB. Is the session_logger_db container running?"
-  docker exec session_logger_db psql -U postgres \
+  docker exec session_logger_db psql -U sessionuser \
     -c "CREATE DATABASE ${DB_NAME:-sso_db} OWNER ${DB_USER:-sso_user};" \
     || die "Failed to recreate DB."
   ok "Database wiped and recreated."
