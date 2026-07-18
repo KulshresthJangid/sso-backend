@@ -73,7 +73,7 @@ stop_service() {
     fi
     rm -f "$PID_FILE"
   fi
-  pkill -f "sso-" 2>/dev/null || true
+  pkill -f "java -jar .*/target/sso-.*\.jar" 2>/dev/null || true
   ok "$SERVICE_NAME stopped."
 }
 
