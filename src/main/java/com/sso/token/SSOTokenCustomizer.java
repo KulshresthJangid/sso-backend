@@ -81,33 +81,53 @@ public class SSOTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         claims.claim("user_id", user.getId().toString());
         claims.claim("org_role", user.getOrgRole().name());
 
-        // Extract workspace_id from the original authorization request
+        // Extract workspace_id from the original authorization request. No
+        // caller (SMAT's SsoController.login(), the SSO frontend's own login
+        // form) actually sends this today — none of them have a workspace
+        // picker — so this was previously *always* null for every login,
+        // which meant every JWT minted had permissions:[] regardless of what
+        // roles were actually assigned. Confirmed via
+        // KAIZEX_FRONTEND_REDESIGN_PLAN.md Phase 7's testing: this broke
+        // Buckets, AI Config, and Chat identically for every user.
+        //
+        // Fix: fall back to the user's own workspace when the caller didn't
+        // ask for a specific one. Every org has exactly one real workspace
+        // today, so "first membership" is a safe, non-lossy default; a
+        // caller that DOES send workspace_id (e.g. a future workspace
+        // switcher) still takes precedence untouched above this fallback.
         String workspaceId = extractWorkspaceId(context);
-        if (workspaceId == null) {
-            // No workspace context — inject empty permissions so JWT is still valid
-            claims.claim("permissions", List.of());
-            return;
-        }
-
         UUID wsUuid;
-        try {
-            wsUuid = UUID.fromString(workspaceId);
-        } catch (IllegalArgumentException e) {
-            log.warn("Invalid workspace_id in auth request: {}", workspaceId);
-            claims.claim("permissions", List.of());
-            return;
+        if (workspaceId == null) {
+            wsUuid = workspaceMemberRepo.findAllByUserIdWithWorkspace(user.getId())
+                    .stream()
+                    .findFirst()
+                    .map(wm -> wm.getWorkspace().getId())
+                    .orElse(null);
+            if (wsUuid == null) {
+                log.warn("User {} has no workspace_id in the auth request and belongs to no workspace", user.getId());
+                claims.claim("permissions", List.of());
+                return;
+            }
+        } else {
+            try {
+                wsUuid = UUID.fromString(workspaceId);
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid workspace_id in auth request: {}", workspaceId);
+                claims.claim("permissions", List.of());
+                return;
+            }
         }
 
         Workspace workspace = workspaceRepo.findByIdAndActiveTrue(wsUuid).orElse(null);
         if (workspace == null) {
-            log.warn("workspace_id {} not found or inactive", workspaceId);
+            log.warn("workspace_id {} not found or inactive", wsUuid);
             claims.claim("permissions", List.of());
             return;
         }
 
         // Verify the user is actually a member of this workspace
         if (!workspaceMemberRepo.existsByWorkspaceIdAndUserId(wsUuid, user.getId())) {
-            log.warn("User {} is not a member of workspace {}", user.getId(), workspaceId);
+            log.warn("User {} is not a member of workspace {}", user.getId(), wsUuid);
             claims.claim("permissions", List.of());
             return;
         }
