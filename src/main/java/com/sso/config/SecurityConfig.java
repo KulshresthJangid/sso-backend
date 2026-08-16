@@ -86,6 +86,10 @@ public class SecurityConfig {
                 .formLogin(form -> form
                         .loginPage("/login")
                         .defaultSuccessUrl("/dashboard", false)
+                        // Default failure handler redirects to a hardcoded bare
+                        // /login?error, losing the tenant slug — see
+                        // TenantAwareAuthenticationFailureHandler.
+                        .failureHandler(new TenantAwareAuthenticationFailureHandler())
                         .permitAll()
                 )
                 .userDetailsService(userDetailsService)
@@ -151,6 +155,10 @@ public class SecurityConfig {
                 .formLogin(form -> form
                         .loginPage("/login")
                         .defaultSuccessUrl("/dashboard", false)
+                        // Default failure handler redirects to a hardcoded bare
+                        // /login?error, losing the tenant slug — see
+                        // TenantAwareAuthenticationFailureHandler.
+                        .failureHandler(new TenantAwareAuthenticationFailureHandler())
                         .permitAll()
                 )
                 .userDetailsService(userDetailsService)
