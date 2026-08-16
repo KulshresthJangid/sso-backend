@@ -18,7 +18,8 @@ public class RoleService {
 
     private final RoleRepository roleRepo;
     private final PermissionRepository permissionRepo;
-    private final UserAppRoleRepository userAppRoleRepo;
+    private final UserWorkspaceRoleRepository userWorkspaceRoleRepo;
+    private final WorkspaceMemberRepository workspaceMemberRepo;
     private final UserRepository userRepo;
     private final OrganizationService orgService;
 
@@ -100,9 +101,21 @@ public class RoleService {
     }
 
     // ── User-Role Assignments ─────────────────────────────────────────────────
+    //
+    // Assigns into user_workspace_roles — the table SSOTokenCustomizer actually
+    // reads to build a JWT's permissions[] claim. (This used to write
+    // user_app_roles instead, a table nothing else in the codebase reads —
+    // assigning a role via this endpoint silently did nothing for the user's
+    // real permissions. See git history for the full story.)
+    //
+    // user_workspace_roles is workspace-scoped and this endpoint isn't (no
+    // workspace picker exists in sso-frontend yet), so — same assumption
+    // SSOTokenCustomizer's own workspace fallback already makes — we resolve
+    // the user's first/only workspace membership. Fine while every org has
+    // exactly one real workspace; revisit if/when multi-workspace orgs exist.
 
     @Transactional
-    public UserAppRole assignRoleToUser(String orgSlug, UUID userId, UUID roleId, String clientId) {
+    public UserWorkspaceRole assignRoleToUser(String orgSlug, UUID userId, UUID roleId, String clientId) {
         Organization org = orgService.getBySlug(orgSlug);
         User user = userRepo.findById(userId)
                 .filter(u -> u.getOrganization().getId().equals(org.getId()))
@@ -110,25 +123,37 @@ public class RoleService {
         Role role = roleRepo.findById(roleId)
                 .filter(r -> r.getOrganization().getId().equals(org.getId()))
                 .orElseThrow(() -> SSOException.notFound("Role not found"));
+        Workspace workspace = resolveWorkspace(userId);
 
-        return userAppRoleRepo.save(UserAppRole.builder()
+        return userWorkspaceRoleRepo.save(UserWorkspaceRole.builder()
                 .user(user)
                 .role(role)
-                .organization(org)
+                .workspace(workspace)
                 .clientId(clientId)
                 .build());
     }
 
-    public List<UserAppRole> listUserRoles(String orgSlug, UUID userId) {
+    public List<UserWorkspaceRole> listUserRoles(String orgSlug, UUID userId) {
         Organization org = orgService.getBySlug(orgSlug);
         userRepo.findById(userId)
                 .filter(u -> u.getOrganization().getId().equals(org.getId()))
                 .orElseThrow(() -> SSOException.notFound("User not found"));
-        return userAppRoleRepo.findAllByOrganizationId(org.getId());
+        Workspace workspace = resolveWorkspace(userId);
+        return userWorkspaceRoleRepo.findAllByWorkspaceIdAndUserId(workspace.getId(), userId);
     }
 
     @Transactional
     public void revokeRoleFromUser(String orgSlug, UUID userId, UUID roleId, String clientId) {
-        userAppRoleRepo.deleteByUserIdAndRoleIdAndClientId(userId, roleId, clientId);
+        Workspace workspace = resolveWorkspace(userId);
+        userWorkspaceRoleRepo.deleteByWorkspaceIdAndUserIdAndRoleId(workspace.getId(), userId, roleId);
+    }
+
+    private Workspace resolveWorkspace(UUID userId) {
+        return workspaceMemberRepo.findAllByUserIdWithWorkspace(userId)
+                .stream()
+                .findFirst()
+                .map(WorkspaceMember::getWorkspace)
+                .orElseThrow(() -> SSOException.conflict(
+                        "User has no workspace — add them to a workspace before assigning roles"));
     }
 }

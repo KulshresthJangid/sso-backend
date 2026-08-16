@@ -4,7 +4,7 @@ import com.sso.dto.CreatePermissionRequest;
 import com.sso.dto.CreateRoleRequest;
 import com.sso.entity.Permission;
 import com.sso.entity.Role;
-import com.sso.entity.UserAppRole;
+import com.sso.entity.UserWorkspaceRole;
 import com.sso.service.RoleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -92,7 +92,7 @@ public class RoleController {
                                           @PathVariable UUID userId,
                                           @PathVariable UUID roleId,
                                           @RequestParam String clientId) {
-        UserAppRole uar = roleService.assignRoleToUser(slug, userId, roleId, clientId);
+        UserWorkspaceRole uar = roleService.assignRoleToUser(slug, userId, roleId, clientId);
         return Map.of("userId", userId, "roleId", roleId,
                 "clientId", clientId, "assignedAt", uar.getAssignedAt());
     }
