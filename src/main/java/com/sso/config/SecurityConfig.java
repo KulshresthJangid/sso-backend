@@ -73,6 +73,10 @@ public class SecurityConfig {
                 // can set TenantContext before the login form is processed.
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(new TenantAwareAuthenticationEntryPoint()))
+                // Default RequestCache saves the post-tenantFilter (slug-stripped) request,
+                // so the post-login redirect loses the /{slug} prefix — see
+                // TenantAwareRequestCache for why.
+                .requestCache(cache -> cache.requestCache(new TenantAwareRequestCache()))
                 // Must run AFTER CsrfFilter (so CSRF sees original /slug/oauth2/** path
                 // and the exemption matches) but BEFORE any OAuth2 AS endpoint filters
                 // so they see the stripped /oauth2/... path.
@@ -134,6 +138,8 @@ public class SecurityConfig {
         http
                 .cors(Customizer.withDefaults())
                 .addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class)
+                // Same slug-loss issue as chain 1 — see TenantAwareRequestCache.
+                .requestCache(cache -> cache.requestCache(new TenantAwareRequestCache()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/orgs").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/signup").permitAll()
