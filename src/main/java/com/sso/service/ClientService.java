@@ -3,6 +3,7 @@ package com.sso.service;
 import com.sso.auth.RegisteredClientMapper;
 import com.sso.dto.ClientResponse;
 import com.sso.dto.CreateClientRequest;
+import com.sso.entity.Brand;
 import com.sso.entity.Organization;
 import com.sso.entity.RegisteredClientEntity;
 import com.sso.exception.SSOException;
@@ -26,16 +27,76 @@ public class ClientService {
 
     private final RegisteredClientEntityRepository clientRepo;
     private final OrganizationService orgService;
+    private final BrandService brandService;
     private final RegisteredClientMapper mapper;
     private final PasswordEncoder passwordEncoder;
 
     private static final List<String> DEFAULT_SCOPES = List.of("openid", "profile", "email");
     private static final List<String> DEFAULT_GRANTS = List.of("authorization_code", "refresh_token");
 
+    /** Legacy org-owned client registration — kept for any pre-brand-tier orgs. */
     @Transactional
     public ClientResponse register(String orgSlug, CreateClientRequest req) {
         Organization org = orgService.getBySlug(orgSlug);
+        Built built = buildEntity(req);
+        built.entity().setOrganization(org);
+        clientRepo.save(built.entity());
+        return toResponse(built.entity(), built.plainSecret());
+    }
 
+    /**
+     * Brand-owned client registration — the path new brands (Zoralis, etc.)
+     * use. One client per brand; every org under that brand shares it for
+     * login purposes (see SsoController's per-brand tenant config on the
+     * SMAT side, and SSOTokenCustomizer's brand-then-org resolution here).
+     */
+    @Transactional
+    public ClientResponse registerForBrand(String brandSlug, CreateClientRequest req) {
+        Brand brand = brandService.getBySlug(brandSlug);
+        Built built = buildEntity(req);
+        built.entity().setBrand(brand);
+        clientRepo.save(built.entity());
+        return toResponse(built.entity(), built.plainSecret());
+    }
+
+    public List<ClientResponse> listByOrg(String orgSlug) {
+        Organization org = orgService.getBySlug(orgSlug);
+        return clientRepo.findAllByOrganizationId(org.getId()).stream()
+                .map(e -> toResponse(e, null))
+                .toList();
+    }
+
+    public List<ClientResponse> listByBrand(String brandSlug) {
+        Brand brand = brandService.getBySlug(brandSlug);
+        return clientRepo.findAllByBrandId(brand.getId()).stream()
+                .map(e -> toResponse(e, null))
+                .toList();
+    }
+
+    @Transactional
+    public void delete(String orgSlug, String clientId) {
+        Organization org = orgService.getBySlug(orgSlug);
+        clientRepo.findByClientIdAndOrganizationId(clientId, org.getId())
+                .ifPresentOrElse(
+                        clientRepo::delete,
+                        () -> { throw SSOException.notFound("Client not found: " + clientId); }
+                );
+    }
+
+    @Transactional
+    public void deleteForBrand(String brandSlug, String clientId) {
+        Brand brand = brandService.getBySlug(brandSlug);
+        clientRepo.findByClientIdAndBrandId(clientId, brand.getId())
+                .ifPresentOrElse(
+                        clientRepo::delete,
+                        () -> { throw SSOException.notFound("Client not found: " + clientId); }
+                );
+    }
+
+    /** The entity only ever stores the hash — this carries the plaintext back once, at creation. */
+    private record Built(RegisteredClientEntity entity, String plainSecret) {}
+
+    private Built buildEntity(CreateClientRequest req) {
         String plainSecret = UUID.randomUUID().toString();
         String hashedSecret = passwordEncoder.encode(plainSecret);
 
@@ -56,7 +117,6 @@ public class ClientService {
 
         RegisteredClientEntity entity = RegisteredClientEntity.builder()
                 .id(UUID.randomUUID().toString())
-                .organization(org)
                 .clientId(UUID.randomUUID().toString())
                 .clientSecret(hashedSecret)
                 .clientName(req.clientName() != null ? req.clientName() : "Unnamed App")
@@ -68,26 +128,7 @@ public class ClientService {
                 .tokenSettings(mapper.serializeSettings(ts.getSettings()))
                 .build();
 
-        clientRepo.save(entity);
-
-        return toResponse(entity, plainSecret);
-    }
-
-    public List<ClientResponse> listByOrg(String orgSlug) {
-        Organization org = orgService.getBySlug(orgSlug);
-        return clientRepo.findAllByOrganizationId(org.getId()).stream()
-                .map(e -> toResponse(e, null))
-                .toList();
-    }
-
-    @Transactional
-    public void delete(String orgSlug, String clientId) {
-        Organization org = orgService.getBySlug(orgSlug);
-        clientRepo.findByClientIdAndOrganizationId(clientId, org.getId())
-                .ifPresentOrElse(
-                        clientRepo::delete,
-                        () -> { throw SSOException.notFound("Client not found: " + clientId); }
-                );
+        return new Built(entity, plainSecret);
     }
 
     private ClientResponse toResponse(RegisteredClientEntity e, String plainSecret) {
@@ -96,7 +137,8 @@ public class ClientService {
                 e.getClientId(),
                 plainSecret,  // null on list, plaintext only on creation
                 e.getClientName(),
-                e.getOrganization().getId().toString(),
+                e.getOrganization() != null ? e.getOrganization().getId().toString() : null,
+                e.getBrand() != null ? e.getBrand().getId().toString() : null,
                 e.getRedirectUris() != null ? Arrays.asList(e.getRedirectUris().split(",")) : List.of(),
                 Arrays.asList(e.getScopes().split(",")),
                 Arrays.asList(e.getAuthorizationGrantTypes().split(","))

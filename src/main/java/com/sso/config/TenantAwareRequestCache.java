@@ -29,12 +29,12 @@ public class TenantAwareRequestCache extends HttpSessionRequestCache {
 
     @Override
     public void saveRequest(HttpServletRequest request, HttpServletResponse response) {
-        var org = TenantContext.get();
-        if (org == null) {
+        var brand = TenantContext.get();
+        if (brand == null) {
             super.saveRequest(request, response);
             return;
         }
-        String prefix = "/" + org.getSlug();
+        String prefix = "/" + brand.getSlug();
         HttpServletRequest withSlug = new HttpServletRequestWrapper(request) {
             @Override
             public String getRequestURI() {

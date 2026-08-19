@@ -10,7 +10,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Implements Spring's RegisteredClientRepository with tenant isolation.
- * All lookups are scoped to the current org from TenantContext.
+ * All lookups are scoped to the current brand from TenantContext (brands own
+ * OAuth2 clients now, not individual orgs — see RegisteredClientEntity).
  */
 @Service
 @RequiredArgsConstructor
@@ -45,20 +46,25 @@ public class TenantAwareRegisteredClientRepository implements RegisteredClientRe
 
     @Override
     public RegisteredClient findByClientId(String clientId) {
-        var org = TenantContext.get();
-        if (org == null) {
+        var brand = TenantContext.get();
+        if (brand == null) {
             // Fallback: find globally (used during token introspection without path tenant)
             return clientRepo.findByClientId(clientId)
                     .map(mapper::toRegisteredClient)
                     .orElse(null);
         }
-        return clientRepo.findByClientIdAndOrganizationId(clientId, org.getId())
+        return clientRepo.findByClientIdAndBrandId(clientId, brand.getId())
                 .map(mapper::toRegisteredClient)
                 .orElse(null);
     }
 
     private boolean isBelongsToCurrentTenant(RegisteredClientEntity e) {
-        var org = TenantContext.get();
-        return org == null || org.getId().equals(e.getOrganization().getId());
+        var brand = TenantContext.get();
+        if (brand == null) return true;
+        // Brand-owned client (the norm going forward) — direct comparison.
+        if (e.getBrand() != null) return brand.getId().equals(e.getBrand().getId());
+        // Legacy org-owned client with no brand_id backfilled — resolve via its org.
+        return e.getOrganization() != null && e.getOrganization().getBrand() != null
+                && brand.getId().equals(e.getOrganization().getBrand().getId());
     }
 }

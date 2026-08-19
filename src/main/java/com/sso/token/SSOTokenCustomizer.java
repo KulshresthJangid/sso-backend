@@ -1,5 +1,6 @@
 package com.sso.token;
 
+import com.sso.entity.Brand;
 import com.sso.entity.User;
 import com.sso.entity.Workspace;
 import com.sso.repository.UserRepository;
@@ -23,12 +24,19 @@ import java.util.stream.Collectors;
 
 /**
  * Enriches JWTs with tenant and workspace RBAC claims:
- *   org_id, org_slug, workspace_id, workspace_slug, workspace_name,
- *   email, permissions[]
+ *   brand_id, brand_slug, org_id, org_slug, workspace_id, workspace_slug,
+ *   workspace_name, email, permissions[]
  *
  * workspace_id is read from the authorization request parameter so the
  * frontend controls which workspace context the token carries.
  * Permissions are resolved from user_workspace_roles for that workspace.
+ *
+ * Brand replaced Organization as the URL/OAuth2 tenant unit — TenantContext
+ * now holds a Brand, not an Organization directly. org_id/org_slug are only
+ * knowable once a specific User is resolved (a brand groups many orgs), so
+ * those two claims moved into addUserClaims(); brand_id/brand_slug are set
+ * unconditionally since the brand is known regardless of whether a user
+ * ends up resolving.
  */
 @Slf4j
 @Component
@@ -46,29 +54,36 @@ public class SSOTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
 
     @Override
     public void customize(JwtEncodingContext context) {
-        var org = TenantContext.get();
-        if (org == null) {
+        var brand = TenantContext.get();
+        if (brand == null) {
             var registeredClient = context.getRegisteredClient();
             if (registeredClient != null) {
                 var clientEntityOpt = clientRepo.findByClientId(registeredClient.getClientId());
                 if (clientEntityOpt.isPresent()) {
-                    org = clientEntityOpt.get().getOrganization();
-                    log.info("Resolved org '{}' from registered client id: {}", org.getSlug(), registeredClient.getClientId());
+                    var clientEntity = clientEntityOpt.get();
+                    // Brand-owned client → use it directly; legacy org-owned
+                    // client (pre-brand-tier data) → resolve via its org.
+                    brand = clientEntity.getBrand() != null
+                            ? clientEntity.getBrand()
+                            : (clientEntity.getOrganization() != null ? clientEntity.getOrganization().getBrand() : null);
+                    if (brand != null) {
+                        log.info("Resolved brand '{}' from registered client id: {}", brand.getSlug(), registeredClient.getClientId());
+                    }
                 }
             }
         }
-        if (org == null) return;
+        if (brand == null) return;
 
         var claims = context.getClaims();
 
-        claims.issuer(issuerBaseUrl + "/" + org.getSlug());
-        claims.claim("org_id", org.getId().toString());
-        claims.claim("org_slug", org.getSlug());
+        claims.issuer(issuerBaseUrl + "/" + brand.getSlug());
+        claims.claim("brand_id", brand.getId().toString());
+        claims.claim("brand_slug", brand.getSlug());
 
         if (!(context.getPrincipal() instanceof UsernamePasswordAuthenticationToken)) return;
 
         String email = context.getPrincipal().getName();
-        userRepo.findByEmailAndOrganizationIdAndActiveTrue(email, org.getId())
+        userRepo.findFirstByEmailAndOrganization_Brand_IdAndActiveTrue(email, brand.getId())
                 .ifPresent(user -> addUserClaims(claims, user, context));
     }
 
@@ -80,6 +95,8 @@ public class SSOTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         claims.claim("email", user.getEmail());
         claims.claim("user_id", user.getId().toString());
         claims.claim("org_role", user.getOrgRole().name());
+        claims.claim("org_id", user.getOrganization().getId().toString());
+        claims.claim("org_slug", user.getOrganization().getSlug());
 
         // Extract workspace_id from the original authorization request. No
         // caller (SMAT's SsoController.login(), the SSO frontend's own login

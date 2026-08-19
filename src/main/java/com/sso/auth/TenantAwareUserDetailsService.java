@@ -13,8 +13,14 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * Spring Security's UserDetailsService — looks up users scoped to the current tenant.
- * TenantContext must be set before this is called (done by TenantResolutionFilter).
+ * Spring Security's UserDetailsService — looks up users scoped to the current
+ * tenant (brand). TenantContext must be set before this is called (done by
+ * TenantResolutionFilter).
+ *
+ * The brand is known at this point (from the URL), but not which of the
+ * brand's orgs the user belongs to — so this searches by email across every
+ * org under the brand. See UserRepository.findFirstByEmailAndOrganization_Brand_IdAndActiveTrue
+ * for the known limitation (assumes brand-scoped email uniqueness).
  */
 @Service
 @RequiredArgsConstructor
@@ -24,14 +30,14 @@ public class TenantAwareUserDetailsService implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        var organization = TenantContext.get();
-        if (organization == null) {
+        var brand = TenantContext.get();
+        if (brand == null) {
             throw new UsernameNotFoundException("No tenant context — cannot authenticate user");
         }
 
-        var user = userRepo.findByEmailAndOrganizationIdAndActiveTrue(email, organization.getId())
+        var user = userRepo.findFirstByEmailAndOrganization_Brand_IdAndActiveTrue(email, brand.getId())
                 .orElseThrow(() -> new UsernameNotFoundException(
-                        "User not found: " + email + " in org: " + organization.getSlug()));
+                        "User not found: " + email + " in brand: " + brand.getSlug()));
 
         return User.builder()
                 .username(user.getEmail())

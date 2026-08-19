@@ -37,6 +37,11 @@ public class Organization {
     @Builder.Default
     private boolean platform = false;
 
+    /** Nullable — which white-label reseller this org is a customer of. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "brand_id")
+    private Brand brand;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

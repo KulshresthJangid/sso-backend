@@ -11,4 +11,6 @@ public interface RegisteredClientEntityRepository extends JpaRepository<Register
     Optional<RegisteredClientEntity> findByClientId(String clientId);
     Optional<RegisteredClientEntity> findByClientIdAndOrganizationId(String clientId, UUID orgId);
     List<RegisteredClientEntity> findAllByOrganizationId(UUID orgId);
+    Optional<RegisteredClientEntity> findByClientIdAndBrandId(String clientId, UUID brandId);
+    List<RegisteredClientEntity> findAllByBrandId(UUID brandId);
 }

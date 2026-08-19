@@ -16,9 +16,15 @@ public class RegisteredClientEntity {
     @Id
     private String id;
 
+    /** Nullable — a client can be owned by a single org (legacy) or by a brand (below). */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "org_id", nullable = false)
+    @JoinColumn(name = "org_id")
     private Organization organization;
+
+    /** Nullable — brand-level clients are shared by every org under that brand. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "brand_id")
+    private Brand brand;
 
     @Column(name = "client_id", nullable = false, unique = true)
     private String clientId;

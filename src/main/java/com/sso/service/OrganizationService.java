@@ -1,6 +1,7 @@
 package com.sso.service;
 
 import com.sso.dto.CreateOrgRequest;
+import com.sso.entity.Brand;
 import com.sso.entity.Organization;
 import com.sso.exception.SSOException;
 import com.sso.repository.OrganizationRepository;
@@ -13,15 +14,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrganizationService {
 
     private final OrganizationRepository orgRepo;
+    private final BrandService brandService;
 
     @Transactional
     public Organization create(CreateOrgRequest req) {
         if (orgRepo.existsBySlug(req.slug())) {
             throw SSOException.conflict("Slug already taken: " + req.slug());
         }
+        Brand brand = req.brandSlug() != null ? brandService.getBySlug(req.brandSlug()) : null;
         return orgRepo.save(Organization.builder()
                 .name(req.name())
                 .slug(req.slug())
+                .brand(brand)
                 .build());
     }
 

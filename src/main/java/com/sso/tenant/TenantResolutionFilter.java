@@ -1,6 +1,6 @@
 package com.sso.tenant;
 
-import com.sso.repository.OrganizationRepository;
+import com.sso.repository.BrandRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,7 +16,7 @@ import java.util.Set;
 /**
  * Runs before every request.
  * 1. Extracts the tenant slug from the URL: /acme-corp/oauth2/authorize → "acme-corp"
- * 2. Loads the Organization from DB and sets TenantContext
+ * 2. Loads the Brand from DB and sets TenantContext
  * 3. Wraps the request to strip the slug from the path so Spring Auth Server
  *    sees a standard path: /oauth2/authorize
  * 4. Clears TenantContext in the finally block
@@ -25,7 +25,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class TenantResolutionFilter extends OncePerRequestFilter {
 
-    private final OrganizationRepository orgRepo;
+    private final BrandRepository brandRepo;
 
     // These paths are NOT tenant-scoped — skip slug extraction.
     // /login is here so bare /login (fallback redirect) doesn't extract "login" as a slug.
@@ -52,14 +52,14 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
                 return;
             }
 
-            var org = orgRepo.findBySlugAndActiveTrue(slug);
-            if (org.isEmpty()) {
+            var brand = brandRepo.findBySlugAndActiveTrue(slug);
+            if (brand.isEmpty()) {
                 response.sendError(HttpServletResponse.SC_NOT_FOUND,
-                        "Organization not found: " + slug);
+                        "Brand not found: " + slug);
                 return;
             }
 
-            TenantContext.set(org.get());
+            TenantContext.set(brand.get());
             // Strip slug prefix so downstream sees /oauth2/... not /acme-corp/oauth2/...
             chain.doFilter(new SlugStrippedRequest(request, slug), response);
 

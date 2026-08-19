@@ -8,7 +8,8 @@ public record ClientResponse(
         String clientId,
         String clientSecret,   // plaintext, only non-null on creation
         String clientName,
-        String orgId,
+        String orgId,          // null for brand-owned clients
+        String brandId,        // null for legacy org-owned clients
         List<String> redirectUris,
         List<String> scopes,
         List<String> grantTypes

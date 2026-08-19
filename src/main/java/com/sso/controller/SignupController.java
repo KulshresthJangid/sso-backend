@@ -19,7 +19,8 @@ public class SignupController {
     private final OrganizationService orgService;
     private final UserService userService;
 
-    record SignupRequest(String orgName, String slug, String adminEmail, String adminPassword) {}
+    /** brandSlug is optional — omit for a legacy/platform-direct org with no reseller. */
+    record SignupRequest(String orgName, String slug, String adminEmail, String adminPassword, String brandSlug) {}
     record SignupResponse(String slug, String orgName) {}
     record ClaimRequest(String slug, String adminEmail, String adminPassword) {}
 
@@ -27,7 +28,7 @@ public class SignupController {
     @ResponseStatus(HttpStatus.CREATED)
     @Transactional
     public SignupResponse signup(@RequestBody SignupRequest req) {
-        orgService.create(new CreateOrgRequest(req.orgName(), req.slug()));
+        orgService.create(new CreateOrgRequest(req.orgName(), req.slug(), req.brandSlug()));
         userService.create(req.slug(), new CreateUserRequest(req.adminEmail(), req.adminPassword(), "ORG_ADMIN"));
         return new SignupResponse(req.slug(), req.orgName());
     }

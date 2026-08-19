@@ -18,8 +18,8 @@ public class TenantAwareAuthenticationEntryPoint implements AuthenticationEntryP
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException authException) throws IOException {
-        var org = TenantContext.get();
-        String loginUrl = (org != null) ? "/" + org.getSlug() + "/login" : "/login";
+        var brand = TenantContext.get();
+        String loginUrl = (brand != null) ? "/" + brand.getSlug() + "/login" : "/login";
         response.sendRedirect(loginUrl);
     }
 }

@@ -24,8 +24,8 @@ public class TenantAwareAuthenticationFailureHandler implements AuthenticationFa
     @Override
     public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response,
                                          AuthenticationException exception) throws IOException {
-        var org = TenantContext.get();
-        String loginUrl = (org != null) ? "/" + org.getSlug() + "/login?error" : "/login?error";
+        var brand = TenantContext.get();
+        String loginUrl = (brand != null) ? "/" + brand.getSlug() + "/login?error" : "/login?error";
         response.sendRedirect(loginUrl);
     }
 }

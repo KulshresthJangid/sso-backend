@@ -3,7 +3,7 @@ package com.sso.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
-public record CreateOrgRequest(
+public record CreateBrandRequest(
         @NotBlank(message = "Name is required")
         String name,
 
@@ -11,10 +11,7 @@ public record CreateOrgRequest(
         @Pattern(regexp = "^[a-z0-9-]+$", message = "Slug must be lowercase letters, numbers, and hyphens only")
         String slug,
 
-        /** Optional — which brand this org is a customer of. Null = no brand (legacy/platform-direct org). */
-        String brandSlug
-) {
-    public CreateOrgRequest(String name, String slug) {
-        this(name, slug, null);
-    }
-}
+        String logoUrl,
+        String primaryColor,
+        String secondaryColor
+) {}

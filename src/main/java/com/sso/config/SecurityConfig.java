@@ -149,6 +149,9 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/signup").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/signup/claim").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/orgs/*").permitAll()
+                        // Frontend fetches this at runtime (no session yet) to skin itself
+                        // per-brand — see BrandController.getConfig().
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/brands/*/config").permitAll()
                         .requestMatchers("/login", "/error").permitAll()
                         .anyRequest().authenticated()
                 )
