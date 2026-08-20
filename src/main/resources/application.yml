@@ -30,3 +30,12 @@ app:
   # Absolute path so the same key is loaded regardless of working directory.
   key-store-path: ${KEY_STORE_PATH:${user.home}/.vault-sso/signing}
   key-store-password: ${KEY_STORE_PASSWORD:changeit}
+
+platform:
+  admin:
+    # Gates POST/DELETE /api/brands/** — see SecurityConfig's
+    # platformAdminFilterChain. Username has a harmless local-dev default;
+    # password deliberately has NO default so a missing env var fails
+    # startup loudly instead of quietly deploying with a guessable password.
+    username: ${PLATFORM_ADMIN_USERNAME:kulshresth}
+    password: ${PLATFORM_ADMIN_PASSWORD}

@@ -7,10 +7,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
@@ -32,6 +35,52 @@ public class SecurityConfig {
 
     @Value("${app.issuer-base-url:http://localhost:9000}")
     private String issuerBaseUrl;
+
+    /**
+     * Filter chain 0 — platform-operator brand management, gated behind a
+     * single fixed credential (PLATFORM_ADMIN_USERNAME/PASSWORD) that only
+     * the platform owner knows — not tied to any Organization/User row, not
+     * the tenant-scoped /{slug}/login flow the other chains use.
+     *
+     * Without this, POST/DELETE /api/brands/** fell through to chain 3's
+     * generic anyRequest().authenticated() — any logged-in org admin, not
+     * just the platform owner, could create or deactivate brands. This
+     * chain intercepts everything under /api/brands/** EXCEPT /config
+     * (still public — kaizex-frontend's BrandProvider fetches that
+     * unauthenticated to skin itself at runtime) before chain 3 ever sees it.
+     *
+     * HTTP Basic rather than a fourth session/cookie login: chains 1 and 3
+     * already share session-cookie auth via TenantAwareUserDetailsService;
+     * a session-based platform login would share SecurityContextHolder
+     * state with those in ways that are easy to get subtly wrong. Basic
+     * Auth is stateless and self-contained — no session to share, nothing
+     * to get wrong across chains.
+     */
+    @Bean
+    @Order(0)
+    public SecurityFilterChain platformAdminFilterChain(
+            HttpSecurity http,
+            UserDetailsService platformAdminUserDetailsService) throws Exception {
+
+        RequestMatcher platformBrandsMatcher = request ->
+                request.getRequestURI().startsWith("/api/brands")
+                        && !request.getRequestURI().endsWith("/config");
+
+        http
+                .securityMatcher(platformBrandsMatcher)
+                .csrf(csrf -> csrf.disable())
+                .cors(Customizer.withDefaults())
+                .authorizeHttpRequests(auth -> auth
+                        .anyRequest().hasAuthority("ROLE_PLATFORM_ADMIN")
+                )
+                .httpBasic(Customizer.withDefaults())
+                .userDetailsService(platformAdminUserDetailsService)
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                );
+
+        return http.build();
+    }
 
     /**
      * Filter chain 1 — OAuth2 Authorization Server endpoints.
@@ -175,6 +224,23 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    /**
+     * Single fixed platform-admin credential, hashed at startup — no manual
+     * bcrypt step for the operator, just plain PLATFORM_ADMIN_USERNAME/
+     * PLATFORM_ADMIN_PASSWORD env vars (same pattern as SSO_CLIENT_SECRET
+     * elsewhere). Backs platformAdminFilterChain's httpBasic() above.
+     */
+    @Bean
+    public UserDetailsService platformAdminUserDetailsService(
+            PasswordEncoder encoder,
+            @Value("${platform.admin.username}") String username,
+            @Value("${platform.admin.password}") String password) {
+        return new InMemoryUserDetailsManager(User.withUsername(username)
+                .password(encoder.encode(password))
+                .authorities("ROLE_PLATFORM_ADMIN")
+                .build());
     }
 
     @Bean

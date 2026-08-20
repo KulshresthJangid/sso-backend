@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -17,18 +18,34 @@ public class BrandController {
 
     private final BrandService brandService;
 
+    /** Platform console's brand table — gated by platformAdminFilterChain (see SecurityConfig). */
+    @GetMapping
+    public List<Map<String, Object>> list() {
+        return brandService.listAll().stream().map(this::toSummary).toList();
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> create(@Valid @RequestBody CreateBrandRequest req) {
         Brand brand = brandService.create(req);
-        return Map.of("id", brand.getId(), "name", brand.getName(), "slug", brand.getSlug());
+        return toSummary(brand);
     }
 
     @GetMapping("/{slug}")
     public Map<String, Object> get(@PathVariable String slug) {
-        Brand brand = brandService.getBySlug(slug);
-        return Map.of("id", brand.getId(), "name", brand.getName(),
-                "slug", brand.getSlug(), "active", brand.isActive());
+        return toSummary(brandService.getBySlug(slug));
+    }
+
+    private Map<String, Object> toSummary(Brand brand) {
+        Map<String, Object> summary = new java.util.HashMap<>();
+        summary.put("id", brand.getId());
+        summary.put("name", brand.getName());
+        summary.put("slug", brand.getSlug());
+        summary.put("logoUrl", brand.getLogoUrl());
+        summary.put("primaryColor", brand.getPrimaryColor());
+        summary.put("secondaryColor", brand.getSecondaryColor());
+        summary.put("active", brand.isActive());
+        return summary;
     }
 
     /**

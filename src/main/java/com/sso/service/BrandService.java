@@ -8,11 +8,17 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class BrandService {
 
     private final BrandRepository brandRepo;
+
+    public List<Brand> listAll() {
+        return brandRepo.findAllByOrderByNameAsc();
+    }
 
     @Transactional
     public Brand create(CreateBrandRequest req) {
