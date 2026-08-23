@@ -1,6 +1,8 @@
 package com.sso.service;
 
+import com.sso.dto.CreateSuperAdminRequest;
 import com.sso.dto.CreateUserRequest;
+import com.sso.entity.Brand;
 import com.sso.entity.Organization;
 import com.sso.entity.User;
 import com.sso.exception.SSOException;
@@ -21,6 +23,7 @@ public class UserService {
 
     private final UserRepository userRepo;
     private final OrganizationService orgService;
+    private final BrandService brandService;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
@@ -42,6 +45,29 @@ public class UserService {
                 .email(req.email())
                 .passwordHash(passwordEncoder.encode(req.password()))
                 .orgRole(role)
+                .build());
+    }
+
+    /**
+     * Creates the one SUPER_ADMIN account for a brand — not scoped to any
+     * org, sees every org under the brand (see SSOTokenCustomizer's
+     * brand_workspace_ids claim). Called from the onboarding wizard, gated
+     * by the platform-admin filter chain same as brand creation itself.
+     */
+    @Transactional
+    public User createSuperAdmin(String brandSlug, CreateSuperAdminRequest req) {
+        Brand brand = brandService.getBySlug(brandSlug);
+
+        if (userRepo.existsByBrand_IdAndOrgRole(brand.getId(), User.OrgRole.SUPER_ADMIN)) {
+            throw SSOException.conflict("This brand already has a super admin.");
+        }
+
+        return userRepo.save(User.builder()
+                .brand(brand)
+                .organization(null)
+                .email(req.email())
+                .passwordHash(passwordEncoder.encode(req.password()))
+                .orgRole(User.OrgRole.SUPER_ADMIN)
                 .build());
     }
 

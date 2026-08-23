@@ -22,4 +22,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * happens to pick first — a known limitation, not resolved here.
      */
     Optional<User> findFirstByEmailAndOrganization_Brand_IdAndActiveTrue(String email, UUID brandId);
+
+    /** Brand-level SUPER_ADMIN login lookup — see TenantAwareUserDetailsService. */
+    Optional<User> findFirstByEmailAndBrand_IdAndOrgRoleAndActiveTrue(String email, UUID brandId, User.OrgRole orgRole);
+
+    /** The brand's SUPER_ADMIN, if one exists — see BrandSuperAdminController's GET (existence check for the wizard). */
+    Optional<User> findFirstByBrand_IdAndOrgRoleAndActiveTrue(UUID brandId, User.OrgRole orgRole);
+
+    /** Enforces "at most one SUPER_ADMIN per brand" at the service layer (the DB's partial unique index is the hard backstop). */
+    boolean existsByBrand_IdAndOrgRole(UUID brandId, User.OrgRole orgRole);
 }

@@ -1,5 +1,6 @@
 package com.sso.auth;
 
+import com.sso.entity.User.OrgRole;
 import com.sso.repository.UserRepository;
 import com.sso.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,9 @@ import java.util.List;
  * brand's orgs the user belongs to — so this searches by email across every
  * org under the brand. See UserRepository.findFirstByEmailAndOrganization_Brand_IdAndActiveTrue
  * for the known limitation (assumes brand-scoped email uniqueness).
+ *
+ * A brand-level SUPER_ADMIN isn't in any org, so it falls back to a second,
+ * org-independent lookup when the org-scoped one comes up empty.
  */
 @Service
 @RequiredArgsConstructor
@@ -36,6 +40,7 @@ public class TenantAwareUserDetailsService implements UserDetailsService {
         }
 
         var user = userRepo.findFirstByEmailAndOrganization_Brand_IdAndActiveTrue(email, brand.getId())
+                .or(() -> userRepo.findFirstByEmailAndBrand_IdAndOrgRoleAndActiveTrue(email, brand.getId(), OrgRole.SUPER_ADMIN))
                 .orElseThrow(() -> new UsernameNotFoundException(
                         "User not found: " + email + " in brand: " + brand.getSlug()));
 
