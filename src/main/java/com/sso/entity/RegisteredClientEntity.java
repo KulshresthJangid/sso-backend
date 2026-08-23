@@ -41,6 +41,16 @@ public class RegisteredClientEntity {
     @Column(name = "client_name", nullable = false)
     private String clientName;
 
+    /**
+     * Permission discovery contract — see PermissionCatalogService. When
+     * set, SSO GETs this URL to fetch the app's full permission catalog
+     * ([{name, resource, action, description}, ...]) instead of orgs
+     * having to type exact permission strings by hand and hope they match
+     * whatever the app actually checks via hasAuthority(...)/hasPermission().
+     */
+    @Column(name = "permissions_uri", columnDefinition = "TEXT")
+    private String permissionsUri;
+
     @Column(name = "client_authentication_methods", nullable = false, columnDefinition = "TEXT")
     private String clientAuthenticationMethods;
 

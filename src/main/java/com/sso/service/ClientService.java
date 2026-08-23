@@ -59,9 +59,22 @@ public class ClientService {
         return toResponse(built.entity(), built.plainSecret());
     }
 
+    /**
+     * An org's own Applications/Roles pages need to see BOTH its own
+     * (legacy, pre-brand) clients AND its brand's shared client(s) — the
+     * white-label onboards the app once at the brand level
+     * (registerForBrand), and every org under that brand logs its users
+     * into the same app, so permission discovery/role creation for e.g.
+     * SMAT has to work from that brand-owned registration, not require
+     * each org to separately re-register the same app.
+     */
     public List<ClientResponse> listByOrg(String orgSlug) {
         Organization org = orgService.getBySlug(orgSlug);
-        return clientRepo.findAllByOrganizationId(org.getId()).stream()
+        List<RegisteredClientEntity> ownClients = clientRepo.findAllByOrganizationId(org.getId());
+        List<RegisteredClientEntity> brandClients = org.getBrand() != null
+                ? clientRepo.findAllByBrandId(org.getBrand().getId())
+                : List.of();
+        return java.util.stream.Stream.concat(ownClients.stream(), brandClients.stream())
                 .map(e -> toResponse(e, null))
                 .toList();
     }
@@ -124,6 +137,7 @@ public class ClientService {
                 .authorizationGrantTypes(String.join(",", grants))
                 .redirectUris(req.redirectUris() != null ? String.join(",", req.redirectUris()) : null)
                 .scopes(String.join(",", scopes))
+                .permissionsUri(req.permissionsUri())
                 .clientSettings(mapper.serializeSettings(cs.getSettings()))
                 .tokenSettings(mapper.serializeSettings(ts.getSettings()))
                 .build();
@@ -141,7 +155,8 @@ public class ClientService {
                 e.getBrand() != null ? e.getBrand().getId().toString() : null,
                 e.getRedirectUris() != null ? Arrays.asList(e.getRedirectUris().split(",")) : List.of(),
                 Arrays.asList(e.getScopes().split(",")),
-                Arrays.asList(e.getAuthorizationGrantTypes().split(","))
+                Arrays.asList(e.getAuthorizationGrantTypes().split(",")),
+                e.getPermissionsUri()
         );
     }
 }

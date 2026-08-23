@@ -12,5 +12,6 @@ public record ClientResponse(
         String brandId,        // null for legacy org-owned clients
         List<String> redirectUris,
         List<String> scopes,
-        List<String> grantTypes
+        List<String> grantTypes,
+        String permissionsUri   // null if the app didn't declare one
 ) {}

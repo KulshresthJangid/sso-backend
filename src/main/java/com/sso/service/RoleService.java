@@ -2,6 +2,7 @@ package com.sso.service;
 
 import com.sso.dto.CreatePermissionRequest;
 import com.sso.dto.CreateRoleRequest;
+import com.sso.dto.PermissionCatalogEntry;
 import com.sso.entity.*;
 import com.sso.exception.SSOException;
 import com.sso.repository.*;
@@ -22,6 +23,7 @@ public class RoleService {
     private final WorkspaceMemberRepository workspaceMemberRepo;
     private final UserRepository userRepo;
     private final OrganizationService orgService;
+    private final PermissionCatalogService permissionCatalogService;
 
     // ── Roles ─────────────────────────────────────────────────────────────────
 
@@ -74,6 +76,32 @@ public class RoleService {
 
     public List<Permission> listPermissions(String orgSlug) {
         Organization org = orgService.getBySlug(orgSlug);
+        return permissionRepo.findAllByOrganizationId(org.getId());
+    }
+
+    /**
+     * Fetches the client's declared permission catalog and upserts it into
+     * this org's own Permission rows — create-if-missing, matched by name,
+     * existing ones left untouched. This is what turns "an org admin has to
+     * know and type the exact permission string an app checks" into "pick
+     * from what the app itself says it supports."
+     */
+    @Transactional
+    public List<Permission> syncPermissionsFromClient(String orgSlug, String clientId) {
+        Organization org = orgService.getBySlug(orgSlug);
+        List<PermissionCatalogEntry> catalog = permissionCatalogService.fetchCatalog(clientId);
+
+        for (PermissionCatalogEntry entry : catalog) {
+            if (permissionRepo.existsByNameAndOrganizationId(entry.name(), org.getId())) continue;
+            permissionRepo.save(Permission.builder()
+                    .organization(org)
+                    .name(entry.name())
+                    .resource(entry.resource())
+                    .action(entry.action())
+                    .description(entry.description())
+                    .build());
+        }
+
         return permissionRepo.findAllByOrganizationId(org.getId());
     }
 

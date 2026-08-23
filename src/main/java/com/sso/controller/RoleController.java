@@ -2,9 +2,11 @@ package com.sso.controller;
 
 import com.sso.dto.CreatePermissionRequest;
 import com.sso.dto.CreateRoleRequest;
+import com.sso.dto.PermissionCatalogEntry;
 import com.sso.entity.Permission;
 import com.sso.entity.Role;
 import com.sso.entity.UserWorkspaceRole;
+import com.sso.service.PermissionCatalogService;
 import com.sso.service.RoleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,7 @@ import java.util.UUID;
 public class RoleController {
 
     private final RoleService roleService;
+    private final PermissionCatalogService permissionCatalogService;
 
     // ── Roles ─────────────────────────────────────────────────────────────────
 
@@ -63,6 +66,25 @@ public class RoleController {
     @GetMapping("/permissions")
     public List<Map<String, Object>> listPermissions(@PathVariable String slug) {
         return roleService.listPermissions(slug).stream()
+                .map(p -> Map.<String, Object>of("id", p.getId(), "name", p.getName(),
+                        "resource", p.getResource(), "action", p.getAction()))
+                .toList();
+    }
+
+    /**
+     * Live preview of an app's declared permission catalog — see
+     * PermissionCatalogService. Fetches, doesn't persist; the frontend uses
+     * this to show what /permissions/sync *would* import before committing.
+     */
+    @GetMapping("/clients/{clientId}/permissions/catalog")
+    public List<PermissionCatalogEntry> permissionCatalog(@PathVariable String slug, @PathVariable String clientId) {
+        return permissionCatalogService.fetchCatalog(clientId);
+    }
+
+    /** Imports a client's declared catalog into this org's own Permission rows — create-if-missing. */
+    @PostMapping("/clients/{clientId}/permissions/sync")
+    public List<Map<String, Object>> syncPermissions(@PathVariable String slug, @PathVariable String clientId) {
+        return roleService.syncPermissionsFromClient(slug, clientId).stream()
                 .map(p -> Map.<String, Object>of("id", p.getId(), "name", p.getName(),
                         "resource", p.getResource(), "action", p.getAction()))
                 .toList();
@@ -117,12 +139,17 @@ public class RoleController {
         roleService.revokeRoleFromUser(slug, userId, roleId, clientId);
     }
 
+    // GET /roles previously had no way to tell the frontend which
+    // permissions a role already has — the assign/revoke endpoints existed
+    // but nothing surfaced current state, so RolesPage.tsx had no way to
+    // build a checklist. permissions here is what closes that gap.
     private Map<String, Object> roleToMap(Role r) {
-        return Map.of(
-                "id", r.getId(),
-                "name", r.getName(),
-                "description", r.getDescription() != null ? r.getDescription() : "",
-                "clientId", r.getClientId() != null ? r.getClientId() : "org-level"
-        );
+        Map<String, Object> map = new java.util.HashMap<>();
+        map.put("id", r.getId());
+        map.put("name", r.getName());
+        map.put("description", r.getDescription() != null ? r.getDescription() : "");
+        map.put("clientId", r.getClientId() != null ? r.getClientId() : "org-level");
+        map.put("permissionIds", r.getPermissions().stream().map(p -> p.getId().toString()).toList());
+        return map;
     }
 }
