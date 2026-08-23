@@ -26,4 +26,8 @@ public class SSOException extends RuntimeException {
     public static SSOException badRequest(String message) {
         return new SSOException(message, HttpStatus.BAD_REQUEST);
     }
+
+    public static SSOException forbidden(String message) {
+        return new SSOException(message, HttpStatus.FORBIDDEN);
+    }
 }

@@ -186,11 +186,16 @@ public class SecurityConfig {
     public SecurityFilterChain defaultFilterChain(
             HttpSecurity http,
             TenantAwareUserDetailsService userDetailsService,
-            TenantResolutionFilter tenantFilter) throws Exception {
+            TenantResolutionFilter tenantFilter,
+            com.sso.tenant.OrgAccessFilter orgAccessFilter) throws Exception {
 
         http
                 .cors(Customizer.withDefaults())
                 .addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class)
+                // Runs after auth is resolved from the session (restored well
+                // before UsernamePasswordAuthenticationFilter) — see
+                // OrgAccessFilter's class doc for the gap this closes.
+                .addFilterAfter(orgAccessFilter, UsernamePasswordAuthenticationFilter.class)
                 // Same slug-loss issue as chain 1 — see TenantAwareRequestCache.
                 .requestCache(cache -> cache.requestCache(new TenantAwareRequestCache()))
                 .authorizeHttpRequests(auth -> auth
