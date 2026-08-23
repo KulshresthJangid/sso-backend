@@ -9,12 +9,20 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class OrganizationService {
 
     private final OrganizationRepository orgRepo;
     private final BrandService brandService;
+
+    /** Every org under one brand — see BrandConsoleController. */
+    public List<Organization> listByBrand(String brandSlug) {
+        Brand brand = brandService.getBySlug(brandSlug);
+        return orgRepo.findAllByBrand_Id(brand.getId());
+    }
 
     @Transactional
     public Organization create(CreateOrgRequest req) {
