@@ -16,4 +16,7 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
     List<Workspace> findAllByOrganizationIdAndActiveTrue(UUID orgId);
 
     boolean existsByOrganizationIdAndSlug(UUID orgId, String slug);
+
+    /** Every workspace across every org under one brand — see SSOTokenCustomizer's brand_workspace_ids claim for the brand-level SUPER_ADMIN. */
+    List<Workspace> findAllByOrganization_Brand_IdAndActiveTrue(UUID brandId);
 }

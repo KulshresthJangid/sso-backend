@@ -8,6 +8,7 @@ import com.sso.repository.UserWorkspaceRoleRepository;
 import com.sso.repository.WorkspaceMemberRepository;
 import com.sso.repository.WorkspaceRepository;
 import com.sso.repository.RegisteredClientEntityRepository;
+import com.sso.entity.User.OrgRole;
 import com.sso.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +18,7 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequ
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -52,7 +54,16 @@ public class SSOTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
     @Value("${app.issuer-base-url}")
     private String issuerBaseUrl;
 
+    // Runs deep inside Spring Security's OAuth2 token-generation pipeline
+    // (OAuth2TokenEndpointFilter → OAuth2AuthorizationCodeAuthenticationProvider),
+    // not a normal @Transactional service call — open-in-view doesn't
+    // reliably cover it, so user.getOrganization() (LAZY) throws
+    // LazyInitializationException ("no Session") once the short-lived
+    // session from the userRepo lookup above closes. @Transactional here
+    // keeps one session open for the whole customize() call, including the
+    // addUserClaims() lazy nav below.
     @Override
+    @Transactional(readOnly = true)
     public void customize(JwtEncodingContext context) {
         var brand = TenantContext.get();
         if (brand == null) {
@@ -83,7 +94,9 @@ public class SSOTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         if (!(context.getPrincipal() instanceof UsernamePasswordAuthenticationToken)) return;
 
         String email = context.getPrincipal().getName();
+        Brand finalBrand = brand;
         userRepo.findFirstByEmailAndOrganization_Brand_IdAndActiveTrue(email, brand.getId())
+                .or(() -> userRepo.findFirstByEmailAndBrand_IdAndOrgRoleAndActiveTrue(email, finalBrand.getId(), OrgRole.SUPER_ADMIN))
                 .ifPresent(user -> addUserClaims(claims, user, context));
     }
 
@@ -95,6 +108,23 @@ public class SSOTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         claims.claim("email", user.getEmail());
         claims.claim("user_id", user.getId().toString());
         claims.claim("org_role", user.getOrgRole().name());
+
+        // Brand-level SUPER_ADMIN — not in any org, so there's no
+        // org_id/org_slug/workspace to resolve. It gets a synthetic
+        // BRAND_SUPER_ADMIN permission plus every workspace id under the
+        // brand (baked in at token-mint time, same as every other claim
+        // here — a brand's org list only changes as often as this token
+        // does, an acceptable staleness window for an admin console).
+        if (user.getOrgRole() == com.sso.entity.User.OrgRole.SUPER_ADMIN) {
+            List<String> workspaceIds = workspaceRepo.findAllByOrganization_Brand_IdAndActiveTrue(user.getBrand().getId())
+                    .stream()
+                    .map(ws -> ws.getId().toString())
+                    .collect(Collectors.toList());
+            claims.claim("brand_workspace_ids", workspaceIds);
+            claims.claim("permissions", List.of("BRAND_SUPER_ADMIN"));
+            return;
+        }
+
         claims.claim("org_id", user.getOrganization().getId().toString());
         claims.claim("org_slug", user.getOrganization().getSlug());
 

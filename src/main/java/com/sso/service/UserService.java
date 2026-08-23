@@ -5,8 +5,12 @@ import com.sso.dto.CreateUserRequest;
 import com.sso.entity.Brand;
 import com.sso.entity.Organization;
 import com.sso.entity.User;
+import com.sso.entity.Workspace;
+import com.sso.entity.WorkspaceMember;
 import com.sso.exception.SSOException;
 import com.sso.repository.UserRepository;
+import com.sso.repository.WorkspaceMemberRepository;
+import com.sso.repository.WorkspaceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,6 +29,8 @@ public class UserService {
     private final OrganizationService orgService;
     private final BrandService brandService;
     private final PasswordEncoder passwordEncoder;
+    private final WorkspaceRepository workspaceRepo;
+    private final WorkspaceMemberRepository workspaceMemberRepo;
 
     @Transactional
     public User create(String orgSlug, CreateUserRequest req) {
@@ -40,12 +46,37 @@ public class UserService {
             catch (IllegalArgumentException e) { throw SSOException.badRequest("Invalid org role: " + req.orgRole()); }
         }
 
-        return userRepo.save(User.builder()
+        User saved = userRepo.save(User.builder()
                 .organization(org)
                 .email(req.email())
                 .passwordHash(passwordEncoder.encode(req.password()))
                 .orgRole(role)
                 .build());
+
+        // Org creation (BrandConsoleController, SignupController,
+        // OrganizationController) never provisioned a Workspace — every org
+        // signed up self-service ended up with zero workspaces, and
+        // SSOTokenCustomizer/WorkspaceService.assignRole both hard-require
+        // one ("every org has exactly one real workspace today"). No
+        // workspace meant no role could ever be assigned to anyone in that
+        // org, which meant every JWT minted permissions:[] regardless of
+        // what roles existed. Bootstrapping it here — the one place every
+        // org-creation path already converges on — covers all of them at
+        // once instead of duplicating this in each controller.
+        Workspace workspace = workspaceRepo.findAllByOrganizationIdAndActiveTrue(org.getId())
+                .stream()
+                .findFirst()
+                .orElseGet(() -> workspaceRepo.save(Workspace.builder()
+                        .organization(org)
+                        .name("Default")
+                        .slug("default")
+                        .build()));
+        workspaceMemberRepo.save(WorkspaceMember.builder()
+                .workspace(workspace)
+                .user(saved)
+                .build());
+
+        return saved;
     }
 
     /**
