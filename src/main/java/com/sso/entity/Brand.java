@@ -38,6 +38,24 @@ public class Brand {
     @Column(name = "secondary_color", length = 20)
     private String secondaryColor;
 
+    /** MINIMAL | AURORA | MIDNIGHT | BENTO — see kaizex-frontend's landing template catalog. */
+    @Column(name = "landing_template", nullable = false, length = 20)
+    @Builder.Default
+    private String landingTemplate = "MINIMAL";
+
+    /** MINIMAL | AURORA | MIDNIGHT | BENTO — see kaizex-frontend's dashboardThemes.ts. */
+    @Column(name = "dashboard_template", nullable = false, length = 20)
+    @Builder.Default
+    private String dashboardTemplate = "MINIMAL";
+
+    /** Optional override of the landing template's own font — null means "use the template's default". See kaizex-frontend's lib/fonts.ts for the curated set. */
+    @Column(name = "landing_font", length = 30)
+    private String landingFont;
+
+    /** Optional override of the dashboard template's own font — null means "use the template's default". */
+    @Column(name = "dashboard_font", length = 30)
+    private String dashboardFont;
+
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private boolean active = true;

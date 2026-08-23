@@ -3,31 +3,24 @@ package com.sso.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
-public record CreateBrandRequest(
+// Slug is deliberately absent — it's the brand's URL/tenant identifier
+// (OAuth2 clients, orgs, users, the JWT issuer all key off it), so it isn't
+// editable after onboarding. Every other field can be changed any time from
+// the platform console's Edit modal.
+public record UpdateBrandRequest(
         @NotBlank(message = "Name is required")
         String name,
-
-        @NotBlank(message = "Slug is required")
-        @Pattern(regexp = "^[a-z0-9-]+$", message = "Slug must be lowercase letters, numbers, and hyphens only")
-        String slug,
 
         String logoUrl,
         String primaryColor,
         String secondaryColor,
 
-        // Both optional — @Pattern only validates when non-null, so omitting
-        // either keeps this backward compatible with any existing caller.
-        // BrandService defaults a null value to "MINIMAL".
         @Pattern(regexp = "^(MINIMAL|AURORA|MIDNIGHT|BENTO)$", message = "Unknown landing template")
         String landingTemplate,
 
         @Pattern(regexp = "^(MINIMAL|AURORA|MIDNIGHT|BENTO)$", message = "Unknown dashboard template")
         String dashboardTemplate,
 
-        // Optional font override, independent of the template — null keeps
-        // the template's own default font. Curated set only (see
-        // kaizex-frontend's lib/fonts.ts) so every option is guaranteed to
-        // already be self-hosted/loaded, no arbitrary Google Fonts lookup.
         @Pattern(regexp = "^(INTER|OUTFIT|SPACE_GROTESK|DM_SANS|POPPINS|OPEN_SANS|INSTRUMENT_SERIF)$", message = "Unknown landing font")
         String landingFont,
 

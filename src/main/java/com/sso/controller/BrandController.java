@@ -1,6 +1,7 @@
 package com.sso.controller;
 
 import com.sso.dto.CreateBrandRequest;
+import com.sso.dto.UpdateBrandRequest;
 import com.sso.entity.Brand;
 import com.sso.service.BrandService;
 import jakarta.validation.Valid;
@@ -36,6 +37,11 @@ public class BrandController {
         return toSummary(brandService.getBySlug(slug));
     }
 
+    @PutMapping("/{slug}")
+    public Map<String, Object> update(@PathVariable String slug, @Valid @RequestBody UpdateBrandRequest req) {
+        return toSummary(brandService.update(slug, req));
+    }
+
     private Map<String, Object> toSummary(Brand brand) {
         Map<String, Object> summary = new java.util.HashMap<>();
         summary.put("id", brand.getId());
@@ -44,6 +50,10 @@ public class BrandController {
         summary.put("logoUrl", brand.getLogoUrl());
         summary.put("primaryColor", brand.getPrimaryColor());
         summary.put("secondaryColor", brand.getSecondaryColor());
+        summary.put("landingTemplate", brand.getLandingTemplate());
+        summary.put("dashboardTemplate", brand.getDashboardTemplate());
+        summary.put("landingFont", brand.getLandingFont());
+        summary.put("dashboardFont", brand.getDashboardFont());
         summary.put("active", brand.isActive());
         return summary;
     }
@@ -63,6 +73,10 @@ public class BrandController {
         config.put("logoUrl", brand.getLogoUrl());
         config.put("primaryColor", brand.getPrimaryColor());
         config.put("secondaryColor", brand.getSecondaryColor());
+        config.put("landingTemplate", brand.getLandingTemplate());
+        config.put("dashboardTemplate", brand.getDashboardTemplate());
+        config.put("landingFont", brand.getLandingFont());
+        config.put("dashboardFont", brand.getDashboardFont());
         return config;
     }
 

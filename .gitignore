@@ -18,3 +18,10 @@ buildNumber.properties
 
 # OS files
 .DS_Store
+
+# Signing key material — never commit real secrets
+sso-signing.p12.key
+sso-signing.p12.kid
+
+# Build artifacts
+deploy/
