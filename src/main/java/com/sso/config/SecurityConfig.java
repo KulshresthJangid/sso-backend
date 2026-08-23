@@ -220,7 +220,16 @@ public class SecurityConfig {
                 )
                 .userDetailsService(userDetailsService)
                 .csrf(csrf -> csrf
-                        .ignoringRequestMatchers("/api/**", "/login", "/*/login", "/oauth2/**", "/*/oauth2/**") // REST API and stateless routes
+                        // "/*/api/**" covers brand-slug-prefixed routes like
+                        // /{brandSlug}/api/brand-console/** (BrandConsoleController) —
+                        // TenantResolutionFilter strips the slug further down the chain,
+                        // but CsrfFilter runs before it and sees the raw, un-stripped URI,
+                        // so the bare "/api/**" pattern alone never matches these and every
+                        // POST/PUT/DELETE under a brand slug (e.g. creating an org from the
+                        // Brand Console) was getting silently blocked with 403 while GETs
+                        // (safe methods, no CSRF check) worked fine — that mismatch was the
+                        // "org creation flow isn't working" bug.
+                        .ignoringRequestMatchers("/api/**", "/*/api/**", "/login", "/*/login", "/oauth2/**", "/*/oauth2/**") // REST API and stateless routes
                 );
 
         return http.build();
