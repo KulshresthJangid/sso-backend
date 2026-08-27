@@ -4,6 +4,7 @@ import com.sso.entity.Organization;
 import com.sso.entity.User;
 import com.sso.repository.OrganizationRepository;
 import com.sso.repository.UserRepository;
+import com.sso.repository.WorkspaceMemberRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,8 +30,15 @@ import java.util.regex.Pattern;
  *
  * This runs early in defaultFilterChain and enforces: the authenticated
  * principal must either (a) belong to the target org directly (any
- * OrgRole), or (b) be the SUPER_ADMIN of the brand that org belongs to
- * (see Brand Console — a brand's super admin manages every org under it).
+ * OrgRole), (b) be the SUPER_ADMIN of the brand that org belongs to
+ * (see Brand Console — a brand's super admin manages every org under it),
+ * or (c) be a member of any workspace under that org — added after this
+ * filter's first version wrongly 403'd workspace-only members (no direct
+ * users.organization_id row for the org, but invited into one of its
+ * workspaces per V6__add_workspace_support.sql) on every /api/orgs/{slug}/**
+ * call, including GET .../permissions — which the frontend's blanket
+ * .catch(() => []) then silently rendered as a false "no permissions yet"
+ * empty state instead of surfacing the 403.
  * Unauthenticated requests are left alone — permitAll routes like
  * GET /api/orgs/{slug} (slug-availability lookup, used unauthenticated by
  * signup) and POST /api/orgs (signup itself, no slug segment to match)
@@ -45,6 +53,7 @@ public class OrgAccessFilter extends OncePerRequestFilter {
 
     private final OrganizationRepository orgRepo;
     private final UserRepository userRepo;
+    private final WorkspaceMemberRepository workspaceMemberRepo;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -80,8 +89,9 @@ public class OrgAccessFilter extends OncePerRequestFilter {
         boolean isOrgMember = userRepo.existsByEmailAndOrganizationId(email, org.getId());
         boolean isBrandSuperAdmin = org.getBrand() != null
                 && userRepo.findFirstByEmailAndBrand_IdAndOrgRoleAndActiveTrue(email, org.getBrand().getId(), User.OrgRole.SUPER_ADMIN).isPresent();
+        boolean isWorkspaceMember = workspaceMemberRepo.existsByUser_EmailAndWorkspace_Organization_Id(email, org.getId());
 
-        if (!isOrgMember && !isBrandSuperAdmin) {
+        if (!isOrgMember && !isBrandSuperAdmin && !isWorkspaceMember) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "You don't have access to this organization");
             return;
         }
