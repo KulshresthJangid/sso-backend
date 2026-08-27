@@ -13,6 +13,11 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
 
     boolean existsByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
 
+    /** Is this user a member of ANY workspace under this org? Used by OrgAccessFilter
+     *  so workspace-only members (no direct users.organization_id row for this org)
+     *  aren't wrongly 403'd on /api/orgs/{slug}/** endpoints. */
+    boolean existsByUser_EmailAndWorkspace_Organization_Id(String email, UUID orgId);
+
     Optional<WorkspaceMember> findByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
 
     void deleteByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
