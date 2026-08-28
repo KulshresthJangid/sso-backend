@@ -47,7 +47,10 @@ public class SecurityConfig {
      * just the platform owner, could create or deactivate brands. This
      * chain intercepts everything under /api/brands/** EXCEPT /config
      * (still public — kaizex-frontend's BrandProvider fetches that
-     * unauthenticated to skin itself at runtime) before chain 3 ever sees it.
+     * unauthenticated to skin itself at runtime) and /public (also public —
+     * bare /kaizex/ lists every active brand as a read-only card; only the
+     * onboard/edit/delete actions need the platform-admin gate, not the
+     * mere existence of a brand list) before chain 3 ever sees them.
      *
      * HTTP Basic rather than a fourth session/cookie login: chains 1 and 3
      * already share session-cookie auth via TenantAwareUserDetailsService;
@@ -64,7 +67,8 @@ public class SecurityConfig {
 
         RequestMatcher platformBrandsMatcher = request ->
                 request.getRequestURI().startsWith("/api/brands")
-                        && !request.getRequestURI().endsWith("/config");
+                        && !request.getRequestURI().endsWith("/config")
+                        && !request.getRequestURI().endsWith("/public");
 
         http
                 .securityMatcher(platformBrandsMatcher)
@@ -206,6 +210,8 @@ public class SecurityConfig {
                         // Frontend fetches this at runtime (no session yet) to skin itself
                         // per-brand — see BrandController.getConfig().
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/brands/*/config").permitAll()
+                        // Bare /kaizex/'s read-only brand-cards listing — see BrandController.listPublic().
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/brands/public").permitAll()
                         .requestMatchers("/login", "/error").permitAll()
                         .anyRequest().authenticated()
                 )
