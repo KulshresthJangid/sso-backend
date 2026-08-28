@@ -59,6 +59,34 @@ public class BrandController {
     }
 
     /**
+     * Public, unauthenticated — bare /kaizex/ (kaizex-frontend) lists every
+     * active white-label brand as a card here. Read-only, display fields
+     * only (same shape as /config below, plus slug) — no onboarding/edit/
+     * delete capability lives behind this; that's still fully gated behind
+     * platformAdminFilterChain via /api/brands itself (list() above,
+     * requires ROLE_PLATFORM_ADMIN) and only reachable through
+     * /sso/platform/brands. See SecurityConfig for both the
+     * platformBrandsMatcher exclusion and the permitAll rule this needs.
+     */
+    @GetMapping("/public")
+    public List<Map<String, Object>> listPublic() {
+        return brandService.listAll().stream()
+                .filter(Brand::isActive)
+                .map(this::toPublicSummary)
+                .toList();
+    }
+
+    private Map<String, Object> toPublicSummary(Brand brand) {
+        Map<String, Object> summary = new java.util.HashMap<>();
+        summary.put("name", brand.getName());
+        summary.put("slug", brand.getSlug());
+        summary.put("logoUrl", brand.getLogoUrl());
+        summary.put("primaryColor", brand.getPrimaryColor());
+        summary.put("secondaryColor", brand.getSecondaryColor());
+        return summary;
+    }
+
+    /**
      * Public, unauthenticated — the frontend fetches this at runtime (keyed
      * by whatever brand slug is in its own URL) to skin itself. Deliberately
      * returns only visual fields — never client_id/client_secret, which live
