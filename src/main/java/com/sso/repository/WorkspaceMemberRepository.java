@@ -22,13 +22,26 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
 
     void deleteByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
 
-    /** All workspaces a user is a member of — used for the workspace switcher */
+    /**
+     * All workspaces a user is a member of — used for the workspace switcher,
+     * and as SSOTokenCustomizer's fallback when a login doesn't specify which
+     * workspace to mint a token for. Ordered by joinedAt ASC (their earliest/
+     * "home" membership first) so that fallback is deterministic rather than
+     * arbitrary DB-order: a user who belongs to more than one workspace used
+     * to get whichever workspace happened to sort first at the JDBC/DB layer
+     * (unspecified, could differ run to run), so their baked-in `permissions`
+     * claim could silently come from the wrong workspace and drop things like
+     * Chat's view_channels — not a full fix for genuine multi-workspace
+     * access (that needs the workspace switcher to actually pass
+     * workspace_id through login), but it stops the non-determinism.
+     */
     @Query("""
             SELECT wm FROM WorkspaceMember wm
             JOIN FETCH wm.workspace w
             JOIN FETCH w.organization
             WHERE wm.user.id = :userId
               AND w.active = true
+            ORDER BY wm.joinedAt ASC
             """)
     List<WorkspaceMember> findAllByUserIdWithWorkspace(@Param("userId") UUID userId);
 }
