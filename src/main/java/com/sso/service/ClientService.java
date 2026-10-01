@@ -9,6 +9,7 @@ import com.sso.entity.RegisteredClientEntity;
 import com.sso.exception.SSOException;
 import com.sso.repository.RegisteredClientEntityRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
@@ -21,9 +22,18 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ClientService {
+
+    // Kaizex's actual admin sessions kept getting silently kicked back to
+    // login mid-workday — 1 hour was too short for how this app is actually
+    // used. 24 hours matches a normal workday without leaving a stale admin
+    // session valid indefinitely (refresh tokens already cover longer-lived
+    // "stay logged in" via the 30-day refresh TTL below).
+    private static final Duration ACCESS_TOKEN_TTL = Duration.ofHours(24);
+    private static final Duration REFRESH_TOKEN_TTL = Duration.ofDays(30);
 
     private final RegisteredClientEntityRepository clientRepo;
     private final OrganizationService orgService;
@@ -106,6 +116,43 @@ public class ClientService {
                 );
     }
 
+    /**
+     * tokenSettings is serialized once, at creation, into the DB — it's
+     * never recomputed on read. Changing ACCESS_TOKEN_TTL/REFRESH_TOKEN_TTL
+     * above only takes effect for clients registered from that point
+     * forward; every already-registered client (Kaizex's included) keeps
+     * whatever TTL was baked in when it was created. Run once at startup
+     * (see TokenSettingsSyncRunner) to bring existing clients in line with
+     * the current policy too — idempotent, so it's harmless to run on every
+     * boot and self-heals if the policy changes again later.
+     */
+    @Transactional
+    public void syncAllTokenSettings() {
+        int updated = 0;
+        for (RegisteredClientEntity entity : clientRepo.findAll()) {
+            try {
+                TokenSettings current = TokenSettings.withSettings(mapper.deserializeSettings(entity.getTokenSettings())).build();
+                if (ACCESS_TOKEN_TTL.equals(current.getAccessTokenTimeToLive())
+                        && REFRESH_TOKEN_TTL.equals(current.getRefreshTokenTimeToLive())) {
+                    continue;
+                }
+                TokenSettings updatedSettings = TokenSettings.withSettings(current.getSettings())
+                        .accessTokenTimeToLive(ACCESS_TOKEN_TTL)
+                        .refreshTokenTimeToLive(REFRESH_TOKEN_TTL)
+                        .build();
+                entity.setTokenSettings(mapper.serializeSettings(updatedSettings.getSettings()));
+                clientRepo.save(entity);
+                updated++;
+            } catch (Exception e) {
+                log.error("Failed to sync tokenSettings for clientId={}: {}", entity.getClientId(), e.getMessage());
+            }
+        }
+        if (updated > 0) {
+            log.info("Synced tokenSettings (accessTokenTTL={}, refreshTokenTTL={}) for {} existing registered client(s)",
+                    ACCESS_TOKEN_TTL, REFRESH_TOKEN_TTL, updated);
+        }
+    }
+
     /** The entity only ever stores the hash — this carries the plaintext back once, at creation. */
     private record Built(RegisteredClientEntity entity, String plainSecret) {}
 
@@ -122,8 +169,8 @@ public class ClientService {
                 .build();
 
         TokenSettings ts = TokenSettings.builder()
-                .accessTokenTimeToLive(Duration.ofHours(1))
-                .refreshTokenTimeToLive(Duration.ofDays(30))
+                .accessTokenTimeToLive(ACCESS_TOKEN_TTL)
+                .refreshTokenTimeToLive(REFRESH_TOKEN_TTL)
                 .reuseRefreshTokens(false)
                 .idTokenSignatureAlgorithm(SignatureAlgorithm.RS256)
                 .build();

@@ -91,4 +91,12 @@ public class RegisteredClientMapper {
             throw new IllegalStateException("Failed to serialize settings", ex);
         }
     }
+
+    public Map<String, Object> deserializeSettings(String json) {
+        try {
+            return objectMapper.readValue(json, MAP_TYPE);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to deserialize settings", ex);
+        }
+    }
 }
